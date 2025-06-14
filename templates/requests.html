@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=390, initial-scale=1">
+    <title>Заявки</title>
+    <style>
+        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; background: #f4f4f4; }
+        .container { width: 100%; max-width: 350px; margin: auto; }
+        h2 { text-align: center; color: #333; font-size: 24px; }
+        .request { border: 1px solid #ccc; border-radius: 5px; padding: 12px; margin-bottom: 12px; background: white; }
+        .request p { margin: 8px 0; font-size: 14px; }
+        .request strong { color: #333; }
+        .error { color: red; font-size: 14px; text-align: center; }
+        .btn { display: block; text-align: center; padding: 12px; background: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-size: 16px; margin-bottom: 12px; }
+        .btn:hover { background: #45a049; }
+        form { display: flex; flex-direction: column; gap: 10px; }
+        select, input[type="text"] { padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 5px; width: 100%; box-sizing: border-box; }
+        button { padding: 10px; background: #4CAF50; color: white; border: none; border-radius: 5px; font-size: 14px; cursor: pointer; }
+        button:hover { background: #45a049; }
+        .cancel { background: #f44336; }
+        .cancel:hover { background: #d32f2f; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Заявки</h2>
+        {% for message in get_flashed_messages() %}
+            <p class="error">{{ message }}</p>
+        {% endfor %}
+        {% if not session.is_admin %}
+            <a href="{{ url_for('create_request') }}" class="btn">Новая заявка</a>
+        {% endif %}
+        <a href="{{ url_for('logout') }}" class="btn cancel">Выйти</a>
+        {% for req in requests %}
+            <div class="request">
+                <p><strong>ФИО:</strong> {{ req['full_name'] }}</p>
+                <p><strong>Адрес:</strong> {{ req['address'] }}</p>
+                <p><strong>Телефон:</strong> {{ req['phone'] }}</p>
+                <p><strong>Услуга:</strong> {{ req['service_type'] }}{% if req['other_service'] %} ({{ req['other_service'] }}) {% endif %}</p>
+                <p><strong>Дата и время:</strong> {{ req['date_time'] }}</p>
+                <p><strong>Оплата:</strong> {{ req['payment_type'] }}</p>
+                <p><strong>Статус:</strong> {{ req['status'] }}</p>
+                {% if req['status'] == 'Отменено' and reasons.get(req['id']) %}
+                    <p><strong>Причина отмены:</strong> {{ reasons[req['id']] }}</p>
+                {% endif %}
+                {% if session.is_admin %}
+                    <form action="{{ url_for('update_request', request_id=req['id']) }}" method="post">
+                        <select name="status">
+                            <option value="Новая" {% if req['status'] == 'Новая' %}selected{% endif %}>Новая</option>
+                            <option value="В работе" {% if req['status'] == 'В работе' %}selected{% endif %}>В работе</option>
+                            <option value="Выполнено" {% if req['status'] == 'Выполнено' %}selected{% endif %}>Выполнено</option>
+                            <option value="Отменено" {% if req['status'] == 'Отменено' %}selected{% endif %}>Отменено</option>
+                        </select>
+                        <input type="text" name="reason" placeholder="Причина отмены (если отменено)" value="{{ reasons.get(req['id'], '') }}">
+                        <button type="submit">Обновить</button>
+                    </form>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+</body>
+</html>

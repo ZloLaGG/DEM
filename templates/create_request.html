@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=390, initial-scale=1">
+    <title>Новая заявка</title>
+    <style>
+        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; background: #f4f4f4; }
+        .container { width: 100%; max-width: 350px; margin: auto; }
+        h2 { text-align: center; color: #333; font-size: 24px; }
+        form { display: flex; flex-direction: column; gap: 12px; }
+        input, select, textarea { padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 5px; width: 100%; box-sizing: border-box; }
+        textarea { resize: vertical; min-height: 80px; }
+        button { padding: 12px; background: #4CAF50; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
+        button:hover { background: #45a049; }
+        .error { color: red; font-size: 14px; text-align: center; }
+        #other_service { display: none; }
+    </style>
+    <script>
+        function toggleOtherService() {
+            const serviceType = document.getElementById('service_type').value;
+            const otherService = document.getElementById('other_service');
+            otherService.style.display = serviceType === 'Иная услуга' ? 'block' : 'none';
+            if (serviceType === 'Иная услуга') {
+                otherService.setAttribute('required', 'required');
+            } else {
+                otherService.removeAttribute('required');
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h2>Новая заявка</h2>
+        {% for message in get_flashed_messages() %}
+            <p class="error">{{ message }}</p>
+        {% endfor %}
+        <form method="post">
+            <input type="text" name="address" placeholder="Адрес" value="{{ form_data.get('address', '') }}" required>
+            <input type="text" name="phone" placeholder="+7(XXX)XXX-XX-XX" value="{{ form_data.get('phone', '') }}" required>
+            <select name="service_type" id="service_type" onchange="toggleOtherService()" required>
+                <option value="" disabled {% if not form_data.get('service_type') %}selected{% endif %}>Выберите услугу</option>
+                <option value="Общий клининг" {% if form_data.get('service_type') == 'Общий клининг' %}selected{% endif %}>Общий клининг</option>
+                <option value="Генеральная уборка" {% if form_data.get('service_type') == 'Генеральная уборка' %}selected{% endif %}>Генеральная уборка</option>
+                <option value="После строительная уборка" {% if form_data.get('service_type') == 'После строительная уборка' %}selected{% endif %}>После строительная уборка</option>
+                <option value="Химчистка ковров и мебели" {% if form_data.get('service_type') == 'Химчистка ковров и мебели' %}selected{% endif %}>Химчистка ковров и мебели</option>
+                <option value="Иная услуга" {% if form_data.get('service_type') == 'Иная услуга' %}selected{% endif %}>Иная услуга</option>
+            </select>
+            <textarea name="other_service" id="other_service" placeholder="Опишите иную услугу">{{ form_data.get('other_service', '') }}</textarea>
+            <input type="datetime-local" name="date_time" value="{{ form_data.get('date_time', '') }}" required>
+            <select name="payment_type" required>
+                <option value="" disabled {% if not form_data.get('payment_type') %}selected{% endif %}>Выберите тип оплаты</option>
+                <option value="Наличные" {% if form_data.get('payment_type') == 'Наличные' %}selected{% endif %}>Наличные</option>
+                <option value="Банковская карта" {% if form_data.get('payment_type') == 'Банковская карта' %}selected{% endif %}>Банковская карта</option>
+            </select>
+            <button type="submit">Отправить</button>
+        </form>
+    </div>
+</body>
+</html>
