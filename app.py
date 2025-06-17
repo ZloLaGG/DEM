@@ -4,11 +4,11 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = 'moynesam_secret_key_2025'
+app.secret_key = 'gruz_secret_key_2025'
 
 # Инициализация базы данных
 def init_db():
-    with sqlite3.connect('moynesam.db') as conn:
+    with sqlite3.connect('gruz.db') as conn:
         cursor = conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -24,32 +24,35 @@ def init_db():
             CREATE TABLE IF NOT EXISTS requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
-                address TEXT NOT NULL,
-                phone TEXT NOT NULL,
-                service_type TEXT NOT NULL,
-                other_service TEXT,
+                cargo_weight REAL NOT NULL,
+                cargo_type TEXT NOT NULL,
+                pickup_address TEXT NOT NULL,
+                delivery_address TEXT NOT NULL,
                 date_time TEXT NOT NULL,
-                payment_type TEXT NOT NULL,
                 status TEXT DEFAULT 'Новая',
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         ''')
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS cancel_reasons (
+            CREATE TABLE IF NOT EXISTS reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 request_id INTEGER NOT NULL,
-                reason TEXT NOT NULL,
-                FOREIGN KEY (request_id) REFERENCES requests(id)
+                user_id INTEGER NOT NULL,
+                review_text TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (request_id) REFERENCES requests(id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
             )
         ''')
         cursor.execute('''
             INSERT OR IGNORE INTO users (full_name, phone, email, login, password)
             VALUES (?, ?, ?, ?, ?)
-        ''', ('Администратор', '+7(000)000-00-00', 'admin@moynesam.ru', 'adminka', 'password'))
+        ''', ('Администратор', '+7(000)000-00-00', 'admin@gruz.ru', 'admin', 'gruzovik2024'))
         conn.commit()
 
 # Валидация данных
 def validate_phone(phone):
-    return bool(re.match(r'^\+7\(\d{3}\)\d{3}-\d{2}-\d{2}$', phone))
+    return bool(re.match(r'^\+7\(9\d{2}\)-\d{3}-\d{2}-\d{2}$', phone))
 
 def validate_email(email):
     return bool(re.match(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$', email))
@@ -61,7 +64,7 @@ def validate_full_name(full_name):
     return bool(re.match(r'^[А-Яа-я\s]+$', full_name))
 
 def get_db():
-    conn = sqlite3.connect('moynesam.db')
+    conn = sqlite3.connect('gruz.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -125,7 +128,7 @@ def login():
         
         if user:
             session['user_id'] = user['id']
-            session['is_admin'] = login == 'adminka'
+            session['is_admin'] = login == 'admin'
             flash('Вход успешен!')
             return redirect(url_for('requests'))
         else:
@@ -134,71 +137,113 @@ def login():
     
     return render_template('login.html', form_data={})
 
-# Список заявок
-@app.route('/requests')
+# Список заявок и отзывы
+@app.route('/requests', methods=['GET', 'POST'])
 def requests():
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    
+
+    # Добавление отзыва
+    if request.method == 'POST':
+        review_text = request.form.get('review_text', '').strip()
+        request_id = request.form.get('request_id')
+        if review_text and request_id:
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO reviews (request_id, user_id, review_text, created_at)
+                    VALUES (?, ?, ?, ?)
+                ''', (request_id, session['user_id'], review_text, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                conn.commit()
+            flash('Отзыв добавлен!')
+
     with get_db() as conn:
         cursor = conn.cursor()
         if session.get('is_admin'):
-            cursor.execute('SELECT r.*, u.full_name FROM requests r JOIN users u ON r.user_id = u.id ORDER BY r.id DESC')
+            cursor.execute('''
+                SELECT r.*, u.full_name FROM requests r
+                JOIN users u ON r.user_id = u.id
+                ORDER BY r.id DESC
+            ''')
         else:
-            cursor.execute('SELECT r.*, u.full_name FROM requests r JOIN users u ON r.user_id = u.id WHERE r.user_id = ? ORDER BY r.id DESC',
-                         (session['user_id'],))
-        requests = cursor.fetchall()
-        
-        reasons = {}
-        cursor.execute('SELECT * FROM cancel_reasons')
-        for row in cursor.fetchall():
-            reasons[row['request_id']] = row['reason']
-    
-    return render_template('requests.html', requests=requests, reasons=reasons)
+            cursor.execute('''
+                SELECT r.*, u.full_name FROM requests r
+                JOIN users u ON r.user_id = u.id
+                WHERE r.user_id = ?
+                ORDER BY r.id DESC
+            ''', (session['user_id'],))
+        requests_list = cursor.fetchall()
 
-# Формирование заявки
+        # Получаем отзывы для всех заявок, теперь с login вместо full_name
+        cursor.execute('''
+            SELECT reviews.*, users.login FROM reviews
+            JOIN users ON reviews.user_id = users.id
+            ORDER BY reviews.created_at DESC
+        ''')
+        reviews = cursor.fetchall()
+        reviews_by_request = {}
+        for review in reviews:
+            reviews_by_request.setdefault(review['request_id'], []).append(review)
+
+    return render_template('requests.html', requests=requests_list, reviews_by_request=reviews_by_request)
+
+# Формирование заявки на перевозку груза
 @app.route('/create_request', methods=['GET', 'POST'])
 def create_request():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
     if request.method == 'POST':
-        address = request.form['address'].strip()
-        phone = request.form['phone'].strip()
-        service_type = request.form['service_type']
-        other_service = request.form.get('other_service', '').strip()
+        cargo_weight = request.form['cargo_weight'].strip()
+        cargo_type_select = request.form.get('cargo_type_select', '').strip()
+        cargo_type = request.form.get('cargo_type', '').strip()
+        pickup_address = request.form['pickup_address'].strip()
+        delivery_address = request.form['delivery_address'].strip()
         date_time = request.form['date_time']
-        payment_type = request.form['payment_type']
+
+        # Выбор типа груза
+        if cargo_type_select == 'Другое':
+            cargo_type_final = cargo_type
+        else:
+            cargo_type_final = cargo_type_select
 
         errors = []
-        if not address:
-            errors.append('Адрес обязателен')
-        if not validate_phone(phone):
-            errors.append('Телефон должен быть в формате +7(XXX)-XXX-XX-XX')
-        if service_type not in ['Общий клининг', 'Генеральная уборка', 'После строительная уборка', 'Химчистка ковров и мебели', 'Иная услуга']:
-            errors.append('Некорректный тип услуги')
-        if service_type == 'Иная услуга' and not other_service:
-            errors.append('Укажите описание иной услуги')
+        try:
+            weight = float(cargo_weight)
+            if weight <= 0:
+                errors.append('Вес груза должен быть положительным числом')
+        except ValueError:
+            errors.append('Вес груза должен быть числом')
+        if not cargo_type_final:
+            errors.append('Тип груза обязателен')
+        if not pickup_address:
+            errors.append('Адрес отправления обязателен')
+        if not delivery_address:
+            errors.append('Адрес доставки обязателен')
         try:
             selected_time = datetime.strptime(date_time, '%Y-%m-%dT%H:%M')
             if selected_time < datetime.now():
                 errors.append('Дата и время не могут быть в прошлом')
         except ValueError:
             errors.append('Некорректный формат даты и времени')
-        if payment_type not in ['Наличные', 'Банковская карта']:
-            errors.append('Некорректный тип оплаты')
 
         if errors:
             for error in errors:
                 flash(error)
-            return render_template('create_request.html', form_data=request.form)
+            # Передаем выбранный тип груза обратно в форму
+            form_data = dict(request.form)
+            if cargo_type_select != 'Другое':
+                form_data['cargo_type'] = cargo_type_select
+            return render_template('create_request.html', form_data=form_data)
 
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute('INSERT INTO requests (user_id, address, phone, service_type, other_service, date_time, payment_type, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                         (session['user_id'], address, phone, service_type, other_service, date_time, payment_type, 'Новая'))
+            cursor.execute('''
+                INSERT INTO requests (user_id, cargo_weight, cargo_type, pickup_address, delivery_address, date_time, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (session['user_id'], weight, cargo_type_final, pickup_address, delivery_address, date_time, 'Новая'))
             conn.commit()
-        flash('Заявка создана!')
+        flash('Заявка на перевозку создана!')
         return redirect(url_for('requests'))
     
     return render_template('create_request.html', form_data={})
@@ -210,17 +255,10 @@ def update_request(request_id):
         return redirect(url_for('login'))
     
     status = request.form['status']
-    reason = request.form.get('reason', '').strip()
-
-    if status == 'Отменено' and not reason:
-        flash('Укажите причину отмены')
-        return redirect(url_for('requests'))
 
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('UPDATE requests SET status = ? WHERE id = ?', (status, request_id))
-        if status == 'Отменено':
-            cursor.execute('INSERT OR REPLACE INTO cancel_reasons (request_id, reason) VALUES (?, ?)', (request_id, reason))
         conn.commit()
     
     flash('Статус заявки обновлен!')
